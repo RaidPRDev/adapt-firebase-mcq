@@ -1,0 +1,36 @@
+<div class="fb-social-mcq-inner component-inner" role="region" aria-label="{{_globals._components._mcq.ariaRegion}}" {{#if _globals._components._mcq.ariaRegion}}tabindex="0"{{/if}}>
+    {{> component this}}
+    <div class="fb-social-mcq-widget component-widget {{#unless _isEnabled}} disabled {{#if _isInteractionComplete}} complete submitted show-user-answer {{#if _isCorrect}}correct{{/if}} {{/if}} {{/unless}}">
+        {{#each _items}}
+        <div class="fb-social-mcq-item component-item component-item-color {{#unless ../_isEnabled}}{{#if ../_canShowMarking}}{{#if _isCorrect}}correct{{else}}incorrect{{/if}}{{/if}}{{/unless}} item-{{@index}}">
+            <input type="radio" id="{{../_id}}-{{@index}}"
+                aria-labelledby="{{../_id}}-{{@index}}-aria"{{#unless ../_isEnabled}}
+                disabled{{/unless}} aria-label="{{a11y_normalize text}}" value="{{{option}}}"/>
+            <label aria-hidden="true" id="{{../_id}}-{{@index}}-aria" for="{{../_id}}-{{@index}}" class="component-item-text-color component-item-border{{#unless ../_isEnabled}} disabled {{/unless}}{{#if _isSelected}} selected{{/if}} a11y-ignore" tabindex="-1">
+                <div class="fb-social-mcq-item-state">
+                    <div class="fb-social-mcq-item-icon fb-social-mcq-answer-icon {{#if ../_isRadio}}radio{{else}}checkbox{{/if}}
+                    component-item-text-color icon">{{{option}}}</div>
+                    <div class="fb-social-mcq-item-icon fb-social-mcq-correct-icon icon icon-tick"></div>
+                    <div class="fb-social-mcq-item-icon fb-social-mcq-incorrect-icon icon icon-cross"></div>
+                </div>
+                <div class="fb-social-mcq-item-inner ">
+                    <p class="fb-social-mcq-item-inner-text">{{{text}}}</p>
+                    <span class="fb-social-mcq-item-inner-image-box radio"></span>
+                </div>
+
+            </label>
+        </div>
+        {{/each}}
+    </div>
+    <div class="buttons">
+    </div>
+    <div class="loading" style="display: none;">
+        <div class="loading-bar"></div>
+    </div>
+    <div class="feedback-graph">
+        <h4><br><span class="your-score"><br></span></h4>
+        <canvas id="chart-area" width="250" height="250"></canvas>
+        <div class="legend-container"></div>
+        <div class="additional-info">{{_additionalInfo}}</div>
+    </div>
+</div>
