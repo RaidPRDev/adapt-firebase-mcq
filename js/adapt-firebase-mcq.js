@@ -16,6 +16,17 @@ define('components/adapt-firebase-mcq/js/adapt-firebase-mcq',
 
         graph:null, // Chart
 
+        onFirebaseError: function()
+        {
+            var msg = "Firebase Extension is not enabled. Please add '_firebase._isEnabled' to course.json";
+
+            try {
+                throw new Error(msg);
+            } catch(e) {
+                console.error(e.name, e.message);
+            }
+        },
+
         resetQuestionOnRevisit: function() {
             this.setAllItemsEnabled(true);
             this.resetQuestion();
@@ -164,33 +175,38 @@ define('components/adapt-firebase-mcq/js/adapt-firebase-mcq',
             this.recordInteraction();
         },
         sendForm: function() {
-            this.$('.buttons').slideUp();
-            this.$('.loading').fadeIn();
-            let items = this.model.get('_items').slice(0);
-            let answer = [];
+            if (this.isFirebaseEnabled)
+            {
+                this.$('.buttons').slideUp();
+                this.$('.loading').fadeIn();
+                let items = this.model.get('_items').slice(0);
+                let answer = [];
 
-            items.sort(function(a, b) {
-                return a._index - b._index;
-            });
+                items.sort(function(a, b) {
+                    return a._index - b._index;
+                });
 
-            _.each(items, function(item, index) {
-                if (item._isSelected) answer.push(item.option);
-            }, this);
+                _.each(items, function(item, index) {
+                    if (item._isSelected) answer.push(item.option);
+                }, this);
 
-            let callbackFunction = this.submissionChecker;
-            let thisObject = this;
+                let callbackFunction = this.submissionChecker;
+                let thisObject = this;
 
-            this.fb = Adapt.fb.ref(this.model.get('_firebaseParentID'));
-            this.formRef = this.fb.child(this.model.get('_firebaseID'));
-            _.each(answer, function(item, index) {
-                let answerRef = this.formRef.child(item);
-                answerRef.child('count')
-                    .transaction(function(current) {
-                        return (current || 0) + 1;
-                    });
-                callbackFunction(answerRef, thisObject, answer.length);
-            }, this);
+                this.fb = Adapt.fb.ref(this.model.get('_firebaseParentID'));
+                this.formRef = this.fb.child(this.model.get('_firebaseID'));
+                _.each(answer, function(item, index) {
+                    let answerRef = this.formRef.child(item);
+                    answerRef.child('count')
+                        .transaction(function(current) {
+                            return (current || 0) + 1;
+                        });
+                    callbackFunction(answerRef, thisObject, answer.length);
+                }, this);
+            }
+            else this.onFirebaseError();
         },
+
         submissionChecker: function(a, thisObject, answersLength) {
             if (!thisObject.submissionsCount) {
                 thisObject.submissionsCount = 1;
