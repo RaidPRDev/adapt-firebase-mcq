@@ -1,5 +1,5 @@
 {
-  "name": "adapt-sr-firebase-mcq",
+  "name": "adapt-firebase-mcq",
   "version": "1.0.0",
   "framework": ">=3.0.0",
   "homepage": "",
@@ -7,7 +7,7 @@
   "displayName" : "Firebase Social Mcq",
   "component" : "fb-social-mcq",
   "description": "A multiple choice social question component that submits to firebase",
-  "main": "/js/adapt-sr-firebase-mcq.js",
+  "main": "/js/adapt-firebase-mcq.js",
   "keywords": [
     "adapt-plugin",
     "adapt-component"
