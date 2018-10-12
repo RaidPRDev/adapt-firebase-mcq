@@ -8,9 +8,15 @@ define([
 
 		events: {
             'click .fb-social-mcq-item label': 'onItemSelected',
-            'keyup .fb-social-mcq-item input': 'onKeyPress',
+            'keyup .fb-social-mcq-item input': 'onKeyPress'
         },
-		
+
+        logEnabled: false,
+        isFirebaseEnabled: false,
+        databaseRef: "",
+        databaseChildRef: "",
+        dataTableName: "",
+
 		onFirebaseError: function()
         {
             var msg = "Firebase Extension is not enabled. Please add '_firebase._isEnabled' to course.json";
@@ -24,49 +30,119 @@ define([
 		
 		initialize: function(){
 
-            this.isFirebaseEnabled = (Adapt.firebase != undefined);
+            this.isFirebaseEnabled = (Adapt.firebase !== undefined);
 
-            console.log("SocialMCQ.initialize().fb:", this.isFirebaseEnabled);
-            console.log("SocialMCQ.initialize().chartExists:", (Chart != null));
+            if (this.logEnabled)
+            {
+                console.log("SocialMCQ.initialize().fb:", this.isFirebaseEnabled);
+                console.log("SocialMCQ.initialize().chartExists:", (Chart != null));
+            }
 
             if (this.isFirebaseEnabled )
             {
-                if (!Adapt.firebase.user)
+                // check if user signed in
+                if (Adapt.firebase != null && Adapt.firebase.user != null)
                 {
-                    this.listenTo(Adapt, {
-                        'firebase:signedin': this.onFirebaseSignedIn
-                    });
+                    // if (Adapt.firebase.auth().currentUser != null)
+                    this.onFirebaseSignedIn({ success: true, user: Adapt.firebase.user });
                 }
+
+                else
+                {
+                    // wait for firebase ext to sign in user
+                    this.listenTo(Adapt, { 'firebase:signedin': this.onFirebaseSignedIn });
+                }
+
+                // set on sign out listener
+                this.listenTo(Adapt, { 'firebase:signedout': this.onFirebaseSignedOut });
             }
+            else console.warn("Firebase Extension is not enabled.");
 
             McqView.prototype.initialize.apply(this, arguments);
         },
-		
+
+        remove: function() {
+
+            if (this.logEnabled) console.log("SocialMCQ.remove()");
+
+            this.databaseRef = null;
+            this.databaseChildRef = null;
+
+            this.stopListening(Adapt, 'firebase:signedin');
+            this.stopListening(Adapt, 'firebase:signedout');
+
+            McqView.prototype.remove.apply(this, arguments);
+        },
+
 		// Calls default methods to setup after the question is rendered
         postRender: function() {
 
-            console.log("SocialMCQ.postRender().fb:", this.isFirebaseEnabled);
+            if (this.logEnabled) console.log("SocialMCQ.postRender().fb:", this.isFirebaseEnabled);
 
-            if (this.isFirebaseEnabled )
-            {
-                if (Adapt.firebase.user)
-                {
-                    this.onFirebaseSignedIn({success:true});
-                }
-            }
-            else this.onFirebaseSignedIn({success:false});
+            McqView.prototype.postRender.apply(this, arguments);
         },
 
         onFirebaseSignedIn: function(result) {
 
-            console.log("SocialMCQ.onFirebaseSignedIn.success:", result.success);
+            if (this.logEnabled) console.log("SocialMCQ.onFirebaseSignedIn.success:", result.success);
+
+            this.stopListening(Adapt, 'firebase:signedin');
+
+            if (this.model.get('_isSubmitted')) {
+
+                this.updateGraph();
+            }
+
+            if (result.success)
+            {
+                this.databaseRef = Adapt.firebase.database.ref(this.model.get('_firebaseID'));
+                this.databaseChildRef = this.databaseRef.child(this.model.get('_firebaseSubID'));
+            }
+            else
+            {
+                console.error(result.error);
+                this.onFirebaseError();
+            }
 
             McqView.prototype.postRender.apply(this, arguments);
         },
+
+        onFirebaseSignedOut: function() {
+
+            if (this.logEnabled) console.log("SocialMCQ.onFirebaseSignedOut");
+
+            // this will detect if user has signed out via SignIn Component
+            // We will wait for user to sign back in either authentic or anonymous
+            this.listenTo(Adapt, { 'firebase:signedin': this.onFirebaseSignedIn });
+        },
+
+        validateFirebaseIDs: function() {
+
+            if (this.logEnabled) {
+                console.log("SocialMCQ.validateFirebaseIDs()");
+                console.log("_firebaseID:", this.model.get('_firebaseID'), " | ", this.model.get('_firebaseSubID'));
+            }
+
+            if (this.model.get('_firebaseID') === undefined)
+            {
+                console.error("_firebaseID does not exist, please check components.json config settings.");
+                return false;
+            }
+            if (this.model.get('_firebaseSubID') === undefined)
+            {
+                console.error("_firebaseID does not exist, please check components.json config settings.");
+                return false;
+            }
+
+            // set db table name
+            this.dataTableName = this.model.get('_firebaseID') + "/" + this.model.get('_firebaseSubID');
+
+            return true;
+        },
 		
 		onSubmitClicked: function() {
-            
-			console.log("FirebaseMcqView.onSubmitClicked()");
+
+            if (this.logEnabled) console.log("SocialMCQ.onSubmitClicked()");
 			
 			if (!this.canSubmit()) {
                 this.showInstructionError();
@@ -74,7 +150,8 @@ define([
                 return;
             }
 			
-			this.sendForm();
+			// save answers to database
+			this.sendToFirebase();
 			
             this.updateAttempts();
             this.setQuestionAsSubmitted();
@@ -84,9 +161,9 @@ define([
             this.recordInteraction();
         },
 		
-		sendForm: function() {
-            
-			console.log("FirebaseMcqView.sendForm()");
+		sendToFirebase: function() {
+
+            if (this.logEnabled) console.log("SocialMCQ.sendToFirebase()");
 			
 			if (this.isFirebaseEnabled)
             {
@@ -107,24 +184,28 @@ define([
                 let callbackFunction = this.submissionChecker;
                 let thisObject = this;
 
-                this.fb = Adapt.firebase.database.ref(this.model.get('_firebaseParentID'));
-                this.formRef = this.fb.child(this.model.get('_firebaseID'));
-                
-				_.each(answer, function(item, index) {
-                    let answerRef = this.formRef.child(item);
+                //this.fb = this.databaseRef Adapt.firebase.database.ref(this.model.get('_firebaseID'));
+                //this.formRef = this.fb.child(this.model.get('_firebaseSubID'));
+
+                var parent = this;
+				_.each(answer, function(item, index)
+                {
+                    let answerRef = parent.databaseChildRef.child(item);
                     answerRef.child('count')
                         .transaction(function(current) {
                             return (current || 0) + 1;
                         });
+
                     callbackFunction(answerRef, thisObject, answer.length);
+
                 }, this);
             }
             else this.onFirebaseError();
         },
 
         submissionChecker: function(answerRef, thisObject, answersLength) {
-            
-			console.log("FirebaseMcqView.submissionChecker()");
+
+            if (this.logEnabled) console.log("FirebaseMcqView.submissionChecker()");
 			
 			if (!thisObject.submissionsCount) {
                 thisObject.submissionsCount = 1;
@@ -138,23 +219,27 @@ define([
         },
 		
 		showFeedback: function(answerRef) {
-			console.log("FirebaseMcqView.showFeedback().answerRef:", answerRef);
+            if (this.logEnabled) console.log("SocialMCQ.showFeedback().answerRef:", answerRef);
 			
 			let graphData = new Array();
             let graphLegend = '';
             let answerData = {};
             let total = 0;
             let thisObject = this;
-            let formRef = this.formRef;
-            formRef.once('value', function(snapshot) {
+            // let formRef = this.formRef;
+
+            this.databaseChildRef.once('value', function(snapshot)
+            {
                 let data = snapshot.val();
-                snapshot.forEach(function(childSnapshot) {
+                snapshot.forEach(function(childSnapshot)
+                {
                     let key = childSnapshot.key;
                     let childData = childSnapshot.val();
                     answerData[key] = childData.count;
                     total += childData.count;
                 });
-                _.each(thisObject.model.get('_items'), function(item) {
+                _.each(thisObject.model.get('_items'), function(item)
+                {
                     if (answerData[item.option]) {
                         graphData.push({
                             value: Math.round((answerData[item.option] / total) * 100),
@@ -165,19 +250,21 @@ define([
                         graphLegend += '<div class="legend-item" style="background-color: ' + item.color + '">' + item.option + '</div>';
                     }
                 }, this);
+
                 thisObject.model.set('_graphData', graphData);
                 thisObject.model.set('_graphLegend', graphLegend);
-                $('html, body')
-                    .animate({
-                        scrollTop: thisObject.$('.buttons')
-                            .top,
-                    });
+
+                $('html, body').animate({scrollTop: thisObject.$('.buttons').top});
+
                 thisObject.updateGraph(Adapt.device.screenSize);
             });
 		},
 		
 		updateGraph: function(size) {
-            if (!this.model.get('_isSubmitted')) return;
+
+            if (this.logEnabled) console.log("FirebaseMcqView.updateGraph");
+			
+			if (!this.model.get('_isSubmitted')) return;
 
             let chartArea = this.$('#chart-area');
             let chartSize = 0;
